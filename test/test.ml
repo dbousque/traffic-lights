@@ -69,7 +69,7 @@ let d_options = {
 
 let open_window { width ; height } =
   Graphics.open_graph (" " ^ string_of_int width ^ "x" ^ string_of_int height) ;
-  Graphics.set_window_title "red-lights"
+  Graphics.set_window_title "traffic-lights"
 
 let render_nodes nodes (ext_left, ext_right, ext_top, ext_bottom) { width ; height ; resolution ; zoom_factor } =
   let render_node { coords ; kind } =
@@ -77,6 +77,8 @@ let render_nodes nodes (ext_left, ext_right, ext_top, ext_bottom) { width ; heig
     let x = int_of_float x in
     let y = ((snd coords -. ext_bottom) /. ext_top) *. (float_of_int height) in
     let y = int_of_float y in
+    print_endline (string_of_int x) ;
+    print_endline (string_of_int y) ;
     let color = match kind with
       | Continue -> Graphics.cyan
       | Stop -> Graphics.red
@@ -103,8 +105,13 @@ let rec update_options_with_events options =
   )
 
 let rec main_loop nodes bounds options =
+  let start = Unix.gettimeofday () in
   let options = update_options_with_events options in
   render_nodes nodes bounds options ;
+  (* 60 fps *)
+  let ms_per_frame = 1.0 /. 60.0 in
+  let elapsed = start -. Unix.gettimeofday () in
+  if elapsed < ms_per_frame then Unix.sleepf (ms_per_frame -. elapsed) ;
   main_loop nodes bounds options
 
 (* ============= END DISPLAY ============= *)
@@ -129,7 +136,7 @@ let () =
     remaining_nodes = [0; 2; 1];
     momentum = (1.0, 1.0)
   } in
-  let my_car = n_times my_car 100000000 in
+  (* let my_car = n_times my_car 100000000 in *)
   (* print_endline (show_vehicle my_car) ; *)
   open_window d_options ;
   main_loop all_nodes bounds d_options
