@@ -27,7 +27,8 @@ let get_all_nodes () =
   [
     { coords = (4.5, 42.42); kind = Continue; touching = [1; 2] };
     { coords = (4.7, 42.57); kind = Continue; touching = [0; 2] };
-    { coords = (4.4, 42.31); kind = Stop; touching = [0; 1] }
+    { coords = (4.4, 42.31); kind = Stop; touching = [0; 1] } ;
+    { coords = (4.2, 42.31); kind = Light Green; touching = [] }
   ]
 
 let make_step vehicle =
@@ -55,7 +56,7 @@ type display_options = {
   width         : int ;
   height        : int ;
   resolution    : float ;
-  center        : float * float ;
+  decal         : float * float ;
   zoom_factor   : float
 }
 
@@ -63,26 +64,54 @@ let d_options = {
   width = 1000 ;
   height = 700 ;
   resolution = 1.0 ; (* 1mx1m squares *)
-  center = (0.0, 0.0) ; (* goes from -1.0 to 1.0 *)
-  zoom_factor = 1.0
+  decal = (0.0, 0.0) ;
+  zoom_factor = 0.8
 }
 
 let open_window { width ; height } =
   Graphics.open_graph (" " ^ string_of_int width ^ "x" ^ string_of_int height) ;
-  Graphics.set_window_title "traffic-lights"
+  Graphics.set_window_title "traffic-lights" ;
+  Graphics.auto_synchronize false
 
-let render_nodes nodes (ext_left, ext_right, ext_top, ext_bottom) { width ; height ; resolution ; zoom_factor } =
+let render_nodes nodes (ext_left, ext_right, ext_top, ext_bottom) { width ; height ; resolution ; decal ; zoom_factor } =
+  let x_max_distance = ext_right -. ext_left in
+  let y_max_distance = ext_top -. ext_bottom in
+  let min_distance = min x_max_distance y_max_distance in
+  let max_distance = max x_max_distance y_max_distance in
+  (* let pixels_multiplier = min width height in *)
   let render_node { coords ; kind } =
-    let x = ((fst coords -. ext_left) /. ext_right) *. (float_of_int width) in
-    let x = int_of_float x in
-    let y = ((snd coords -. ext_bottom) /. ext_top) *. (float_of_int height) in
-    let y = int_of_float y in
-    print_endline (string_of_int x) ;
-    print_endline (string_of_int y) ;
+
+    let x = fst coords -. ext_left in
+    let x = x /. max_distance in
+    let x = x +. ((max_distance -. x_max_distance) /. 2.0) in
+
+    let y = snd coords -. ext_bottom in
+    let y = y /. max_distance in
+    let y = y +. ((max_distance -. y_max_distance) /. 2.0) in
+
+    (*let x = fst coords -. ext_left in
+    let x = x -. (min_distance /. 2.0) in
+    let x = x /. max_distance in
+    let x = x *. zoom_factor in
+    let x = x +. (0.5 *. zoom_factor) in
+
+    let y = snd coords -. ext_bottom in
+    let y = y -. (min_distance /. 2.0) in
+    let y = y /. max_distance in
+    let y = y *. zoom_factor in
+    let y = y +. (0.5 *. zoom_factor) in*)
+
+
+    (* let x = int_of_float (x *. float_of_int pixels_multiplier) in
+    let y = int_of_float (y *. float_of_int pixels_multiplier) in *)
+
+    let x = int_of_float (x *. float_of_int width) in
+    let y = int_of_float (y *. float_of_int height) in
     let color = match kind with
       | Continue -> Graphics.cyan
-      | Stop -> Graphics.red
-      | Light _ -> Graphics.green
+      | Stop -> Graphics.magenta
+      | Light Green -> Graphics.green
+      | Light Red -> Graphics.red
     in
     Graphics.set_line_width 3 ;
     Graphics.set_color color ;
@@ -96,9 +125,9 @@ let rec update_options_with_events options =
   | true -> (
     let options = (
       match Graphics.read_key () with
-      | 'x' -> { width = options.width ; height = options.height ; resolution = options.resolution ; center = options.center ; zoom_factor = options.zoom_factor *. 1.1 } (* options with { zoom_factor = options.zoom_factor *. 1.1 } *)
-      | 'z' -> { width = options.width ; height = options.height ; resolution = options.resolution ; center = options.center ; zoom_factor = options.zoom_factor /. 1.1 } (* options with { zoom_factor = options.zoom_factor /. 1.1 } *)
-      | c -> print_char c ; print_endline "" ; options
+      | 'x' -> { width = options.width ; height = options.height ; resolution = options.resolution ; decal = options.decal ; zoom_factor = options.zoom_factor *. 1.1 } (* options with { zoom_factor = options.zoom_factor *. 1.1 } *)
+      | 'z' -> { width = options.width ; height = options.height ; resolution = options.resolution ; decal = options.decal ; zoom_factor = options.zoom_factor /. 1.1 } (* options with { zoom_factor = options.zoom_factor /. 1.1 } *)
+      | c -> print_int (int_of_char c) ; print_endline "" ; options
       | _ -> options
     ) in
     update_options_with_events options
@@ -107,7 +136,9 @@ let rec update_options_with_events options =
 let rec main_loop nodes bounds options =
   let start = Unix.gettimeofday () in
   let options = update_options_with_events options in
+  Graphics.clear_graph () ;
   render_nodes nodes bounds options ;
+  Graphics.synchronize () ;
   (* 60 fps *)
   let ms_per_frame = 1.0 /. 60.0 in
   let elapsed = start -. Unix.gettimeofday () in
