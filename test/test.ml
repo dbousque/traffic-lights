@@ -61,9 +61,9 @@ type display_options = {
 }
 
 let d_options = {
-  width = 1000 ;
-  height = 700 ;
-  resolution = 1.0 ; (* 1mx1m squares *)
+  width = 1300 ; (* 1300 *)
+  height = 800 ; (* 500 *)
+  resolution = 0.9 ; (* 0.9mx0.9m squares, a car is approximately 1.8 * 4.5, so 2 squares by 5 *)
   decal = (0.0, 0.0) ;
   zoom_factor = 0.8
 }
@@ -76,37 +76,38 @@ let open_window { width ; height } =
 let render_nodes nodes (ext_left, ext_right, ext_top, ext_bottom) { width ; height ; resolution ; decal ; zoom_factor } =
   let x_max_distance = ext_right -. ext_left in
   let y_max_distance = ext_top -. ext_bottom in
-  let min_distance = min x_max_distance y_max_distance in
+  let min_win_border = float_of_int (min width height) in
   let max_distance = max x_max_distance y_max_distance in
-  (* let pixels_multiplier = min width height in *)
+  let x_ratio = x_max_distance /. max_distance in
+  let y_ratio = y_max_distance /. max_distance in
+  let max_x_pixels, max_y_pixels = x_ratio *. min_win_border, y_ratio *. min_win_border in
+  let remaining_pixels_x = width - int_of_float max_x_pixels in
+  let remaining_pixels_y = height - int_of_float max_y_pixels in
   let render_node { coords ; kind } =
-
     let x = fst coords -. ext_left in
     let x = x /. max_distance in
-    let x = x +. ((max_distance -. x_max_distance) /. 2.0) in
+    let x = x +. fst decal in
 
-    let y = snd coords -. ext_bottom in
-    let y = y /. max_distance in
-    let y = y +. ((max_distance -. y_max_distance) /. 2.0) in
-
-    (*let x = fst coords -. ext_left in
-    let x = x -. (min_distance /. 2.0) in
-    let x = x /. max_distance in
+    (* move point to bottom left, to apply zoom_factor *)
+    let x = x -. (x_ratio /. 2.0) in
     let x = x *. zoom_factor in
-    let x = x +. (0.5 *. zoom_factor) in
+    let x = x +. (x_ratio /. 2.0) in
+
+    let x = int_of_float (x *. min_win_border) in
+    let x = x + (remaining_pixels_x / 2) in
 
     let y = snd coords -. ext_bottom in
-    let y = y -. (min_distance /. 2.0) in
     let y = y /. max_distance in
+    let y = y +. snd decal in
+
+    (* move point to bottom left, to apply zoom_factor *)
+    let y = y -. (y_ratio /. 2.0) in
     let y = y *. zoom_factor in
-    let y = y +. (0.5 *. zoom_factor) in*)
+    let y = y +. (y_ratio /. 2.0) in
 
+    let y = int_of_float (y *. min_win_border) in
+    let y = y + (remaining_pixels_y / 2) in
 
-    (* let x = int_of_float (x *. float_of_int pixels_multiplier) in
-    let y = int_of_float (y *. float_of_int pixels_multiplier) in *)
-
-    let x = int_of_float (x *. float_of_int width) in
-    let y = int_of_float (y *. float_of_int height) in
     let color = match kind with
       | Continue -> Graphics.cyan
       | Stop -> Graphics.magenta
@@ -121,29 +122,48 @@ let render_nodes nodes (ext_left, ext_right, ext_top, ext_bottom) { width ; heig
 
 let rec update_options_with_events options =
   match Graphics.key_pressed () with
-  | false -> options
+  | false -> (false, options)
   | true -> (
-    let options = (
+    let stop, options = (
+      let min_win_border = min options.width options.height in
+      let zoom_factor = options.zoom_factor in
+      let decal_x, decal_y = options.decal in
+      let move_decal = 30.0 /. zoom_factor /. float_of_int min_win_border in
       match Graphics.read_key () with
-      | 'x' -> { width = options.width ; height = options.height ; resolution = options.resolution ; decal = options.decal ; zoom_factor = options.zoom_factor *. 1.1 } (* options with { zoom_factor = options.zoom_factor *. 1.1 } *)
-      | 'z' -> { width = options.width ; height = options.height ; resolution = options.resolution ; decal = options.decal ; zoom_factor = options.zoom_factor /. 1.1 } (* options with { zoom_factor = options.zoom_factor /. 1.1 } *)
-      | c -> print_int (int_of_char c) ; print_endline "" ; options
-      | _ -> options
+      (* WASD *)
+      | 'w' -> (false, { options with decal = (decal_x, decal_y -. move_decal) })
+      | 's' -> (false, { options with decal = (decal_x, decal_y +. move_decal) })
+      | 'a' -> (false, { options with decal = (decal_x +. move_decal, decal_y) })
+      | 'd' -> (false, { options with decal = (decal_x -. move_decal, decal_y) })
+      (* ZOOM *)
+      | 'x' -> (false, { options with zoom_factor = zoom_factor *. 1.1 })
+      | 'z' -> (false, { options with zoom_factor = zoom_factor /. 1.1 })
+      (* ESC *)
+      | c when int_of_char c = 27 -> (true, options)
+      | c -> print_int (int_of_char c) ; print_endline "" ; (false, options)
+      | _ -> (false, options)
     ) in
-    update_options_with_events options
+    match stop with
+    | true -> (true, options)
+    | false -> update_options_with_events options
   )
 
 let rec main_loop nodes bounds options =
   let start = Unix.gettimeofday () in
-  let options = update_options_with_events options in
-  Graphics.clear_graph () ;
-  render_nodes nodes bounds options ;
-  Graphics.synchronize () ;
-  (* 60 fps *)
-  let ms_per_frame = 1.0 /. 60.0 in
-  let elapsed = start -. Unix.gettimeofday () in
-  if elapsed < ms_per_frame then Unix.sleepf (ms_per_frame -. elapsed) ;
-  main_loop nodes bounds options
+  let stop, options = update_options_with_events options in
+  match stop with
+  | true -> ()
+  | false -> (
+    Graphics.clear_graph () ;
+    render_nodes nodes bounds options ;
+    Graphics.synchronize () ;
+    (* 60 fps *)
+    let ms_per_frame = 1.0 /. 60.0 in
+    let elapsed = Unix.gettimeofday () -. start in
+    Printf.printf "%d %%\n" (int_of_float (elapsed /. ms_per_frame *. 100.0)) ;
+    if elapsed < ms_per_frame then Unix.sleepf (ms_per_frame -. elapsed) ;
+    main_loop nodes bounds options
+  )
 
 (* ============= END DISPLAY ============= *)
 
